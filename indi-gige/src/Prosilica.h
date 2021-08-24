@@ -1,5 +1,5 @@
 /*
- GigE interface wrapper on araviss
+ Custom functions for Prosilica GT cameras
  Copyright (C) 2021 Linus Molteno (linus@molteno.net)
 
  This library is free software; you can redistribute it and/or
