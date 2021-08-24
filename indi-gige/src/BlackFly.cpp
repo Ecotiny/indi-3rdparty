@@ -32,16 +32,15 @@ bool BlackFly::_custom_settings()
     ::ArvDevice *dev = this->dev;
 #define WRITE_REGISTER(reg, val)                                       \
     {                                                                  \
-        error  = nullptr;                                                 \
+        error  = nullptr;                                              \
         result = arv_device_write_register(dev, (reg), (val), &error); \
-        if ((result != 1) || (error != nullptr))                          \
+        if ((result != 1) || (error != nullptr))                       \
         {                                                              \
             goto error;                                                \
         }                                                              \
     }
 
     gboolean result;
-    guint32 val;
     GError *error = nullptr;
 
     int i;
@@ -94,7 +93,6 @@ void BlackFly::_fixup(void)
     }
 
     gboolean result;
-    guint32 val;
     GError *error = nullptr;
 
     int i;
@@ -133,11 +131,12 @@ bool BlackFly::_get_initial_config(void)
     /* Probably can find this somewhere in genicam, too, but it depends on framerate
      * and the maximum exposure is consequently not published */
     this->cam.exposure.update(5000, 11900000);
+    return true;
 }
 
 bool BlackFly::_set_initial_config(void)
 {
     printf("%s\n", __PRETTY_FUNCTION__);
     ArvGeneric::_set_initial_config();
-    this->_custom_settings();
+    return this->_custom_settings();
 }

@@ -17,13 +17,15 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef GENERIC_CCD_H
-#define GENERIC_CCD_H
+#ifndef GIGE_CCD_H 
+#define GIGE_CCD_H 
 
 #include <indiccd.h>
 #include <iostream>
 
-#include "ArvInterface.h"
+//class arv::ArvCamera;
+
+//include "ArvInterface.h"
 
 using namespace std;
 
@@ -36,6 +38,7 @@ class GigECCD : public INDI::CCD
     const char *getDefaultName();
 
     bool initProperties();
+    void ISGetProperties(const char *dev);
     bool updateProperties();
 
     bool Connect();
@@ -43,6 +46,8 @@ class GigECCD : public INDI::CCD
 
     bool StartExposure(float duration);
     bool AbortExposure();
+
+    void LogString(const char* input);
 
   protected:
     void TimerHit();
@@ -65,6 +70,8 @@ class GigECCD : public INDI::CCD
     int timer_id;
     struct timeval exposure_start_time;
     struct timeval exposure_transfer_time;
+
+    bool supportsTemperature;
 
     /* Indi properties */
 

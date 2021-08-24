@@ -66,14 +66,17 @@ class ArvGeneric : public arv::ArvCamera
     ARV_EXPOSURE_STATUS exposure_poll(void (*fn_image_callback)(void *const, uint8_t const *const, size_t),
                                       void *const usr_ptr);
 
+    double get_temperature();
+    void updateINDIpointer(GigECCD* indiccd);
+
   protected:
     void _init(void);
     bool _configure(void);
     void _test_exposure_and_abort(void);
     template <typename T>
-    bool _get_bounds(void (*fn_arv_bounds)(::ArvCamera *, T *min, T *max), min_max_property<T> *prop);
+    bool _get_bounds(void (*fn_arv_bounds)(::ArvCamera *, T *min, T *max, GError** error), min_max_property<T> *prop);
     template <typename T>
-    void _set_cam_exposure_property(void (*arv_set)(::ArvCamera *, T), min_max_property<T> *prop, T const new_val);
+    void _set_cam_exposure_property(void (*arv_set)(::ArvCamera *, T, GError** error), min_max_property<T> *prop, T const new_val);
 
     const char *_str_val(const char *s);
     bool _get_initial_config();
@@ -116,6 +119,9 @@ class ArvGeneric : public arv::ArvCamera
         const char *model_name;
         const char *device_id;
     } cam;
+
+  private:
+    GigECCD* indiccd;
 };
 
 #endif /*CPP_ARV_CAMERA_H*/

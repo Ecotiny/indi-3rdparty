@@ -8,7 +8,7 @@
 /* #undef HAVE_TERMIOS_H */
 
 /* Define if you have fitsio.h */
-/* #undef HAVE_CFITSIO_H */
+#undef HAVE_CFITSIO_H
 
 /* Define if you have libnova.h */
 /* #undef HAVE_NOVA_H */

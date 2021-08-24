@@ -21,6 +21,9 @@
 
 #include <stdint.h>
 #include <stddef.h>
+//#include "indi_gige.h"
+
+class GigECCD;
 
 namespace arv
 {
@@ -73,7 +76,7 @@ class min_max_property
 class ArvCamera
 {
   public:
-    ArvCamera(void *camera_device) {}
+    ArvCamera(void *camera_device) {(void)camera_device;}
     virtual bool connect()      = 0;
     virtual bool disconnect()   = 0;
     virtual bool is_connected() = 0;
@@ -109,6 +112,11 @@ class ArvCamera
     virtual void exposure_abort(void)                      = 0;
     virtual ARV_EXPOSURE_STATUS exposure_poll(void (*fn_image_callback)(void *const, uint8_t const *const, size_t),
                                               void *const) = 0;
+
+    /* Get temperature */
+    virtual double get_temperature() = 0;
+
+    virtual void updateINDIpointer(GigECCD*) = 0;
 };
 
 class ArvFactory

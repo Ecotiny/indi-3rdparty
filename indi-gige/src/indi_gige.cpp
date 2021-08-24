@@ -25,6 +25,7 @@
 
 #include "indidevapi.h"
 #include "eventloop.h"
+#include "ArvGeneric.h"
 
 #include "indi_gige.h"
 
@@ -38,7 +39,7 @@
 #define TIME_VAL_GET(x)   (gettimeofday(x, nullptr))
 
 #define TIMER_TRANSFER_TIMEOUT_US (5000000UL) /* Allow for relatively large link-layer delays */
-#define TIMER_EXPOSURE_TIMEOUT_US (200000UL)  /* GigE cameras are very precise, so set 100ms time-out */
+#define TIMER_EXPOSURE_TIMEOUT_US (2000000UL)  /* GigE cameras are very precise, so set 100ms time-out */
 
 #define TIMER_US_TO_MS (1000)
 #define TIMER_US_TO_S  (1000000)
@@ -52,7 +53,9 @@ public:
     Loader()
     {
         arv::ArvCamera *camera = arv::ArvFactory::find_first_available();
-        cameras.push_back(std::unique_ptr<GigECCD>(new GigECCD(camera)));
+        if (camera != nullptr) {
+            cameras.push_back(std::unique_ptr<GigECCD>(new GigECCD(camera)));
+        }
     }
 } loader;
 
@@ -64,12 +67,18 @@ const char *GigECCD::getDefaultName()
 GigECCD::GigECCD(arv::ArvCamera *camera)
 {
     this->camera = camera;
+    camera->updateINDIpointer(this);
     snprintf(this->name, sizeof(this->name), "%s", this->camera->model_name());
     setDeviceName(this->name);
 }
 
 GigECCD::~GigECCD()
 {
+}
+
+void GigECCD::LogString(const char* input) 
+{
+    LOG_INFO(input);
 }
 
 bool GigECCD::initProperties()
@@ -89,25 +98,32 @@ bool GigECCD::_update_geometry(void)
     /* Sync these with INDI */
     PrimaryCCD.setBin(this->camera->get_bin_x().val(), this->camera->get_bin_y().val());
     PrimaryCCD.setFrame(this->camera->get_x_offset().val(), this->camera->get_y_offset().val(),
-                        this->camera->get_width().val(), this->camera->get_height().val());
+                        this->camera->get_width().val() * this->camera->get_bin_x().val(),
+		       	this->camera->get_height().val() * this->camera->get_bin_y().val());
 
     /* Sanity checks, reserve buffers */
+    int const frame_byte_size = this->camera->get_frame_byte_size();
     int const width           = this->camera->get_width().val();
     int const height          = this->camera->get_height().val();
-    int const frame_byte_size = this->camera->get_frame_byte_size();
-    int const indi_bufsize    = PrimaryCCD.getSubW() * PrimaryCCD.getSubH() * PrimaryCCD.getBPP() / 8;
+     // int const width           = PrimaryCCD.getSubW();
+     // int const height          = PrimaryCCD.getSubH();
+    int const indi_bufsize    = width * height * PrimaryCCD.getBPP() / 8;
 
     if (indi_bufsize != frame_byte_size)
     {
         LOGF_ERROR("Unexpected INDI image buffer size, has %i bytes, camera has %i", indi_bufsize,
                frame_byte_size);
+        LOGF_ERROR("Width: %i, Height: %i, BPP: %i", width, height, PrimaryCCD.getBPP());
         PrimaryCCD.setFrameBufferSize(0);
+	    return false;
     }
     else
     {
-        LOGF_INFO("Reserving INDI image buffer size %i bytes", indi_bufsize);
+        //LOGF_INFO("Reserving INDI image buffer size %i bytes", indi_bufsize);
         PrimaryCCD.setFrameBufferSize(frame_byte_size);
     }
+
+    return true;
 }
 
 void GigECCD::_update_indi_properties(void)
@@ -123,6 +139,20 @@ void GigECCD::_update_indi_properties(void)
     IUFillText(&indiprop_info[2], "Device ID", "", this->camera->device_id());
     IUFillTextVector(&indiprop_info_prop, indiprop_info, 3, getDeviceName(), "Camera Info", "", MAIN_CONTROL_TAB, IP_RO,
                      0, IPS_IDLE);
+
+    double temp = this->camera->get_temperature();
+    if (temp != -150.0) { // probably not fake
+	TemperatureN[0].value = temp; 
+	LOGF_INFO("The CCD Temperature is %f", TemperatureN[0].value);
+	IDSetNumber(&TemperatureNP, nullptr);
+	defineProperty(&TemperatureNP);
+   	this->supportsTemperature = true;
+    } else {
+	LOG_INFO("This camera doesn't support temperature");
+   	this->supportsTemperature = false;
+    }
+
+    IUSaveText(&BayerT[2], "GRBG");
 
     defineProperty(&indiprop_info_prop);
     defineProperty(&this->indiprop_gain_prop);
@@ -146,8 +176,10 @@ bool GigECCD::updateProperties()
                            this->camera->get_bpp().val(), this->camera->get_pixel_pitch().val(),
                            this->camera->get_pixel_pitch().val());
 
+        LOGF_INFO("Calculating framebuf values with %i bpp", this->camera->get_bpp().val());
+
         (void)this->_update_geometry();
-        this->timer_id = this->SetTimer(TIMER_TICK_MS);
+        this->timer_id = this->SetTimer(getCurrentPollingPeriod());
     }
     else
     {
@@ -181,6 +213,7 @@ bool GigECCD::StartExposure(float duration)
     if (PrimaryCCD.getFrameType() == INDI::CCDChip::BIAS_FRAME)
         duration = 0;
 
+    this->_update_geometry();
     camera->set_exposure_time((double)(duration)*1000000.0);
 
     TIME_VAL_INIT(&this->exposure_transfer_time);
@@ -197,7 +230,7 @@ bool GigECCD::AbortExposure()
     return true;
 }
 
-void GigECCD::_update_image(uint8_t const *const data, size_t size)
+void GigECCD::_update_image(const uint8_t* data, size_t size)
 {
     LOGF_INFO("Receiving %i bytes image", size);
 
@@ -206,7 +239,7 @@ void GigECCD::_update_image(uint8_t const *const data, size_t size)
     if ((size == frame_buf_size) && (data != nullptr))
     {
         uint8_t *const image = PrimaryCCD.getFrameBuffer();
-        memcpy(image, (void *const)data, frame_buf_size);
+        memcpy(image, (uint8_t const*)data, frame_buf_size);
         this->ExposureComplete(&PrimaryCCD);
     }
     else
@@ -230,12 +263,13 @@ void GigECCD::_handle_failed(void)
     camera->exposure_abort();
 
     PrimaryCCD.setExposureLeft(0);
+    PrimaryCCD.setExposureFailed();
 
-    /* Fill with black */
-    uint8_t *const image = PrimaryCCD.getFrameBuffer();
-    memset(image, 0, PrimaryCCD.getFrameBufferSize());
+    ///* Fill with black */
+    //uint8_t *const image = PrimaryCCD.getFrameBuffer();
+    //memset(image, 0, PrimaryCCD.getFrameBufferSize());
 
-    this->ExposureComplete(&PrimaryCCD);
+    //this->ExposureComplete(&PrimaryCCD);
 }
 
 void GigECCD::_handle_timeout(struct timeval *const tv, uint32_t timeout_us)
@@ -255,16 +289,22 @@ void GigECCD::_handle_timeout(struct timeval *const tv, uint32_t timeout_us)
     else
         PrimaryCCD.setExposureLeft((float)time_left / (float)TIMER_US_TO_S);
 
-    if (elapsed > timeout_us)
+    LOGF_INFO("%d has elapsed", elapsed);
+
+    if (elapsed > exposure_time + timeout_us) 
+    {
+        LOG_INFO("Timed out!");
         this->_handle_failed();
+    }
 }
 
 void GigECCD::TimerHit()
 {
-    this->timer_id = this->SetTimer(TIMER_TICK_MS);
+    this->timer_id = this->SetTimer(getCurrentPollingPeriod());
     if (!this->camera->is_connected() || !this->camera->is_exposing())
         return;
 
+    this->_update_geometry();
     arv::ARV_EXPOSURE_STATUS const status = camera->exposure_poll(this->_receive_image_hook, this);
     switch (status)
     {
@@ -272,16 +312,29 @@ void GigECCD::TimerHit()
             /* Nothing to do, ArvCamera automatically unsets is_exposing */
             break;
         case arv::ARV_EXPOSURE_UNKNOWN:
+	    LOG_INFO("Unknown ARV state");
         case arv::ARV_EXPOSURE_FAILED:
+	    LOG_ERROR("ARV reports aborted exposure");
             this->_handle_failed();
             break;
         case arv::ARV_EXPOSURE_FILLING:
+	    LOG_INFO("Exposure filling");
             this->_handle_timeout(&this->exposure_transfer_time, TIMER_TRANSFER_TIMEOUT_US);
             break;
         case arv::ARV_EXPOSURE_BUSY:
+   	    //LOGF_INFO("Taking an exposure! Started %d, timeout %d", this->exposure_start_time, (uint32_t)this->camera->get_exposure().val() + TIMER_EXPOSURE_TIMEOUT_US);
             this->_handle_timeout(&this->exposure_start_time,
                                   ((uint32_t)this->camera->get_exposure().val() + TIMER_EXPOSURE_TIMEOUT_US));
             break;
+	default:
+	    LOG_INFO("Default state");
+    }
+
+    // update temperature
+    if (this->supportsTemperature) {
+   	TemperatureN[0].value = this->camera->get_temperature();
+
+        IDSetNumber(&TemperatureNP, nullptr);
     }
 }
 
@@ -310,14 +363,20 @@ bool GigECCD::UpdateCCDFrame(int x, int y, int w, int h)
 {
     LOGF_INFO("%s x=%i y=%i w=%i h=%i", __PRETTY_FUNCTION__, x, y, w, h);
 
-    this->camera->set_geometry(x, y, w, h);
+    this->camera->set_geometry(x, y, w*this->camera->get_bin_x().val(), h*this->camera->get_bin_y().val());
     return this->_update_geometry();
+}
+
+void GigECCD::ISGetProperties(const char *dev)
+{
+    INDI::CCD::ISGetProperties(dev);
 }
 
 bool GigECCD::UpdateCCDBin(int binx, int biny)
 {
     LOGF_INFO("%s binx=%i biny=%i", __PRETTY_FUNCTION__, binx, biny);
     camera->set_bin(binx, biny);
+    this->_update_geometry();
     return UpdateCCDFrame(PrimaryCCD.getSubX(), PrimaryCCD.getSubY(), PrimaryCCD.getSubW(), PrimaryCCD.getSubH());
 }
 

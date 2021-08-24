@@ -18,18 +18,26 @@
  */
 #include "ArvGeneric.h"
 #include "BlackFly.h"
+#include "Prosilica.h"
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 #include <string.h>
 
-#define BLACKFLY_MODEL "BFLY-PGE-31S4M"
+#define BLACKFLY_MODEL  "BFLY-PGE-31S4M"
+#define PROSILICA_MODEL "GT6600C"
 
 arv::ArvCamera *ArvFactory::find_first_available(void)
 {
-    ::ArvCamera *camera    = arv_camera_new(nullptr);
-    const char *model_name = arv_camera_get_model_name(camera);
+    GError *error = nullptr;
+
+    ::ArvCamera *camera    = arv_camera_new(nullptr, &error);
+    if (error) {
+        g_clear_error(&error);
+        return nullptr;
+    }
+    const char *model_name = arv_camera_get_model_name(camera, nullptr);
 
     if ((camera == nullptr) || (model_name == nullptr))
         return nullptr;
@@ -39,8 +47,12 @@ arv::ArvCamera *ArvFactory::find_first_available(void)
         printf("Creating BlackFly...\n");
         return new BlackFly((void *)camera);
     }
-    else
+    else if (memmem(model_name, strlen(model_name), PROSILICA_MODEL, strlen(PROSILICA_MODEL)))
     {
+	    printf("Creating Prosilica...\n");
+	    return new Prosilica((void *)camera);
+    }
+    else {
         printf("Creating Generic...\n");
         return new ArvGeneric((void *)camera);
     }
