@@ -27,14 +27,14 @@ if (CFITSIO_FOUND)
 
     set(GIGE_SRCS
 	${CMAKE_CURRENT_SOURCE_DIR}/src/indi_gige.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ArvGeneric.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ArvFactory.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/BlackFly.cpp
-)
+	${CMAKE_CURRENT_SOURCE_DIR}/src/ArvGeneric.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/ArvFactory.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/BlackFly.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/Prosilica.cpp)
 
-IF (UNITY_BUILD)
-    ENABLE_UNITY_BUILD(indigige GIGE_SRCS 10 cpp)
-ENDIF ()
+#IF (UNITY_BUILD)
+#    ENABLE_UNITY_BUILD(indigige GIGE_SRCS 10 cpp)
+#ENDIF ()
 
 add_executable(indi_gige_ccd ${GIGE_SRCS})
 
