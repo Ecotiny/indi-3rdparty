@@ -15,7 +15,7 @@ Requirements
 
 	cfitsio-devel is required to compile support for FITS.
 	
-+ aravis >= v0.6
++ aravis >= v0.8
 
 	aravis is required, see https://github.com/AravisProject/aravis
 
@@ -89,8 +89,6 @@ Known issues
     will generate a black frame. Subsequent frames are OK. I have no idea why, it seems
     related to my particular camera behavior. 
 
-    (3) Probably only BLACKFLY cameras work, because AFAIK all machine vision cameras work 
-    with exposure times slaved to the framerate. If you want to access longer exposure times,
-    you need to disable automatic frame rate control. Unfortunately, how to do this is 
-    camera-specific.
+    (3) If you want to access longer exposure times, you need to disable automatic frame rate control.
+    Unfortunately, how to do this is camera-specific.
 

@@ -117,6 +117,7 @@ ArvGeneric::ArvGeneric(void *camera_device) : ArvCamera(camera_device)
     this->_init();
     this->camera  = (::ArvCamera *)camera_device;
     this->dev = arv_camera_get_device(this->camera);
+    this->reset_camera();
 
     if (!error) { this->cam.model_name  = arv_camera_get_model_name(this->camera, &error); }
     if (!error) { this->cam.vendor_name = arv_camera_get_vendor_name(this->camera, &error); }
@@ -192,7 +193,7 @@ bool ArvGeneric::connect()
         if (!error) { this->cam.device_id   = arv_camera_get_device_id(this->camera, &error); }
 
         if (error) {
-            printf("Encountered error setting up!");
+            printf("Encountered error reconnecting!");
             g_clear_error(&error); 
         }
     }
@@ -349,8 +350,12 @@ void ArvGeneric::_set_cam_exposure_property(void (*arv_set)(::ArvCamera *, T, GE
     this->_test_exposure_and_abort();
     prop->set(new_val);
     GError *error = nullptr;
-    if (!error) { arv_set(this->camera, prop->val(), &error); }
+    if (!error && this->is_connected()) { arv_set(this->camera, prop->val(), &error); }
     if (error) { this->indiccd->LogString("Encountered error !"); g_clear_error(&error); }
+    if (!this->is_connected()) 
+    {
+        this->connect();  
+    }
 }
 
 void ArvGeneric::set_gain(double const val)
@@ -371,7 +376,6 @@ void ArvGeneric::set_exposure_time(double const val)
     if (this->stream) {
     	while (1)
     	{
-    	    this->indiccd->LogString("Trying to delete buffers");
     	    buffer = arv_stream_try_pop_buffer(this->stream);
     	    if (buffer)
     	        g_clear_object(&buffer);
@@ -385,7 +389,6 @@ void ArvGeneric::set_exposure_time(double const val)
     gint const payload = arv_camera_get_payload(this->camera, &error);
     buffer             = arv_buffer_new(payload, nullptr);
     if (!error) {
-        this->indiccd->LogString("Pushing a new buffer onto the stream");
         arv_stream_push_buffer(this->stream, buffer);
         return buffer;
     } else {
@@ -428,7 +431,7 @@ void ArvGeneric::_stream_stop()
     GError *error = nullptr;
     arv_camera_stop_acquisition(this->camera, &error);
     g_object_unref(this->stream);
-    if (error) { this->indiccd->LogString("Encountered error!"); g_clear_error(&error); }
+    if (error) { this->indiccd->LogString("Encountered error unreferencing stream and stopping acquisition!"); g_clear_error(&error); }
     this->stream_active = false;
 }
 
@@ -445,9 +448,14 @@ void ArvGeneric::exposure_start(void)
     this->_test_exposure_and_abort();
     this->stream = this->_stream_create();
     this->buffer = this->_buffer_create();
+    if (this->buffer) // _buffer_create() might return a nullptr on error
+    {
+        this->_stream_start();
+        this->_trigger_exposure();
+    }
+    else
+        throw std::runtime_error("Could not create buffer, maybe camera has been disconnected?");
 
-    this->_stream_start();
-    this->_trigger_exposure();
 }
 
 void ArvGeneric::exposure_abort(void)
@@ -501,9 +509,17 @@ ARV_EXPOSURE_STATUS ArvGeneric::exposure_poll(void (*fn_image_callback)(void *co
             this->_stream_stop();
             return ARV_EXPOSURE_FINISHED;
         case ARV_BUFFER_STATUS_TIMEOUT:
+            this->indiccd->LogString("Encountered timeout error");
+            return ARV_EXPOSURE_FAILED;
         case ARV_BUFFER_STATUS_MISSING_PACKETS:
+            this->indiccd->LogString("Encountered missing packets error");
+            return ARV_EXPOSURE_FAILED;
         case ARV_BUFFER_STATUS_WRONG_PACKET_ID:
+            this->indiccd->LogString("Encountered wrong packet ID error");
+            return ARV_EXPOSURE_FAILED;
         case ARV_BUFFER_STATUS_SIZE_MISMATCH:
+            this->indiccd->LogString("Encountered size mismatch error");
+            return ARV_EXPOSURE_FAILED;
         case ARV_BUFFER_STATUS_ABORTED:
             this->_stream_stop();
             return ARV_EXPOSURE_FAILED;
@@ -515,4 +531,17 @@ ARV_EXPOSURE_STATUS ArvGeneric::exposure_poll(void (*fn_image_callback)(void *co
 double ArvGeneric::get_temperature()
 {
     return -150.0;
+}
+
+// Reset camera settings (load default)
+void ArvGeneric::reset_camera()
+{
+    GError *error;
+    arv_device_set_string_feature_value(this->dev, "UserSetDefaultSelector", "Default", &error);
+    arv_device_execute_command(this->dev, "UserSetLoad", &error);
+
+    if (error)
+    {
+        this->indiccd->LogString("Error trying to reset the camera! damn");
+    }
 }

@@ -99,8 +99,8 @@ bool GigECCD::_update_geometry(void)
     /* Sync these with INDI */
     PrimaryCCD.setBin(this->camera->get_bin_x().val(), this->camera->get_bin_y().val());
     PrimaryCCD.setFrame(this->camera->get_x_offset().val(), this->camera->get_y_offset().val(),
-                        this->camera->get_width().val() * this->camera->get_bin_x().val(),
-		       	this->camera->get_height().val() * this->camera->get_bin_y().val());
+                        this->camera->get_width().val()  * this->camera->get_bin_x().val(),
+        		       	this->camera->get_height().val() * this->camera->get_bin_y().val());
 
     /* Sanity checks, reserve buffers */
     int const frame_byte_size = this->camera->get_frame_byte_size();
@@ -120,7 +120,7 @@ bool GigECCD::_update_geometry(void)
     }
     else
     {
-        //LOGF_INFO("Reserving INDI image buffer size %i bytes", indi_bufsize);
+//        LOGF_INFO("Reserving INDI image buffer size %i bytes", indi_bufsize);
         PrimaryCCD.setFrameBufferSize(frame_byte_size);
     }
 
@@ -143,14 +143,14 @@ void GigECCD::_update_indi_properties(void)
 
     double temp = this->camera->get_temperature();
     if (temp != -150.0) { // probably not fake
-	TemperatureN[0].value = temp; 
-	LOGF_INFO("The CCD Temperature is %f", TemperatureN[0].value);
-	IDSetNumber(&TemperatureNP, nullptr);
-	defineProperty(&TemperatureNP);
-   	this->supportsTemperature = true;
+    	TemperatureN[0].value = temp; 
+    	LOGF_INFO("The CCD Temperature is %f", TemperatureN[0].value);
+    	IDSetNumber(&TemperatureNP, nullptr);
+    	defineProperty(&TemperatureNP);
+       	this->supportsTemperature = true;
     } else {
-	LOG_INFO("This camera doesn't support temperature");
-   	this->supportsTemperature = false;
+    	LOG_INFO("This camera doesn't support temperature");
+       	this->supportsTemperature = false;
     }
 
     IUSaveText(&BayerT[2], "GRBG");
@@ -214,14 +214,24 @@ bool GigECCD::StartExposure(float duration)
     if (PrimaryCCD.getFrameType() == INDI::CCDChip::BIAS_FRAME)
         duration = 0;
 
+
+    PrimaryCCD.setExposureDuration(duration);
     this->_update_geometry();
     camera->set_exposure_time((double)(duration)*1000000.0);
 
     TIME_VAL_INIT(&this->exposure_transfer_time);
     TIME_VAL_GET(&this->exposure_start_time);
-
-    camera->exposure_start();
-    return camera->is_exposing();
+    
+    try
+    {
+        camera->exposure_start();
+        return camera->is_exposing();
+    } 
+    catch (const std::runtime_error& e)
+    {
+        LOG_ERROR("Encountered stream buffer when starting exposure");
+        return false;
+    }
 }
 
 bool GigECCD::AbortExposure()
@@ -290,8 +300,6 @@ void GigECCD::_handle_timeout(struct timeval *const tv, uint32_t timeout_us)
     else
         PrimaryCCD.setExposureLeft((float)time_left / (float)TIMER_US_TO_S);
 
-    LOGF_INFO("%d has elapsed", elapsed);
-
     if (elapsed > exposure_time + timeout_us) 
     {
         LOG_INFO("Timed out!");
@@ -313,13 +321,13 @@ void GigECCD::TimerHit()
             /* Nothing to do, ArvCamera automatically unsets is_exposing */
             break;
         case arv::ARV_EXPOSURE_UNKNOWN:
-	    LOG_INFO("Unknown ARV state");
+	        LOG_INFO("Unknown ARV state");
         case arv::ARV_EXPOSURE_FAILED:
-	    LOG_ERROR("ARV reports aborted exposure");
+	        LOG_ERROR("ARV reports aborted exposure");
             this->_handle_failed();
             break;
         case arv::ARV_EXPOSURE_FILLING:
-	    LOG_INFO("Exposure filling");
+	        LOG_INFO("Exposure filling");
             this->_handle_timeout(&this->exposure_transfer_time, TIMER_TRANSFER_TIMEOUT_US);
             break;
         case arv::ARV_EXPOSURE_BUSY:
@@ -333,8 +341,8 @@ void GigECCD::TimerHit()
 
     // update temperature
     if (this->supportsTemperature) {
-   	TemperatureN[0].value = this->camera->get_temperature();
-
+        double temperature = this->camera->get_temperature();
+   	    TemperatureN[0].value = temperature;
         IDSetNumber(&TemperatureNP, nullptr);
     }
 }
@@ -387,3 +395,20 @@ bool GigECCD::UpdateCCDFrameType(INDI::CCDChip::CCD_FRAME fType)
     PrimaryCCD.setFrameType(fType);
     return true;
 }
+
+void GigECCD::addFITSKeywords(fitsfile * fptr, INDI::CCDChip * targetChip)
+{
+    INDI::CCD::addFITSKeywords(fptr, targetChip);
+    
+    int status = 0;
+
+    if (this->supportsTemperature)
+    {
+        fits_update_key_s(fptr, TDOUBLE, "CCD-TEMP", &(TemperatureN[0].value), "CCD Temperature (Celsius)", &status);
+    }
+    int gain = this->camera->get_gain().val();
+    fits_update_key_s(fptr, TUINT, "EGAIN", &(gain), "CCD gain", &status);
+
+    fits_update_key_str(fptr, "BAYERPAT", "GRBG", "Bayer color pattern", &status);
+}
+

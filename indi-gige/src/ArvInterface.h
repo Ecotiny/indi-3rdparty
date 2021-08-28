@@ -116,7 +116,7 @@ class ArvCamera
 
     /* Get temperature */
     virtual double get_temperature() = 0;
-
+    virtual void reset_camera() = 0;
     virtual void updateINDIpointer(GigECCD*) = 0;
 };
 

@@ -27,6 +27,7 @@ extern "C" {
 }
 
 #include "ArvInterface.h"
+#include <stdexcept>
 
 using namespace arv;
 
@@ -69,6 +70,8 @@ class ArvGeneric : public arv::ArvCamera
 
     double get_temperature();
     void updateINDIpointer(GigECCD* indiccd);
+
+    void reset_camera();
 
   protected:
     void _init(void);

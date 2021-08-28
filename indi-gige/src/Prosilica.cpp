@@ -41,7 +41,7 @@ bool Prosilica::_custom_settings()
     // 			"SensorTaps" "One" (?)
 
     GError *error = nullptr;
-    arv_device_set_string_feature_value(dev, "SensorDigitizationTaps", "One", &error);
+    arv_device_set_string_feature_value(dev, "SensorDigitizationTaps", "Four", &error);
     if (!error) { arv_device_set_string_feature_value(dev, "BalanceWhiteAuto", "Off", &error); }
     if (!error) { arv_device_set_string_feature_value(dev, "DeviceTemperatureSelector", "Main", &error); }
     if (!error) { arv_camera_set_pixel_format(this->camera, ARV_PIXEL_FORMAT_BAYER_GR_12, &error); }

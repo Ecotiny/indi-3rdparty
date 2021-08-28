@@ -41,6 +41,7 @@ class GigECCD : public INDI::CCD
     bool initProperties();
     void ISGetProperties(const char *dev);
     bool updateProperties();
+    void addFITSKeywords(fitsfile*, INDI::CCDChip*);
 
     bool Connect();
     bool Disconnect();
